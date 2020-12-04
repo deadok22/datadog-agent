@@ -76,6 +76,9 @@ type Probe struct {
 	startTime          time.Time
 	event              *Event
 	mountEvent         *Event
+	reOrderer          *ReOrderer
+	ctx                context.Context
+	cancelFnc          context.CancelFunc
 }
 
 // GetResolvers returns the resolvers of Probe
@@ -131,7 +134,7 @@ func (p *Probe) Init() error {
 		switch perfMap.Name {
 		case "events":
 			perfMap.PerfMapOptions = manager.PerfMapOptions{
-				DataHandler: p.handleEvent,
+				DataHandler: p.reOrderer.HandleEvent,
 				LostHandler: p.handleLostEvents,
 			}
 		case "mountpoints_events":
@@ -174,10 +177,14 @@ func (p *Probe) Init() error {
 
 // Start the runtime security probe
 func (p *Probe) Start() error {
+	go p.reOrderer.Start(p.ctx)
+
 	if err := p.manager.Start(); err != nil {
 		return err
 	}
+
 	go p.loadController.Start(context.Background())
+
 	return nil
 }
 
@@ -338,7 +345,7 @@ func (p *Probe) handleMountEvent(CPU int, data []byte, perfMap *manager.PerfMap,
 	p.DispatchEvent(event)
 }
 
-func (p *Probe) handleEvent(CPU int, data []byte, perfMap *manager.PerfMap, manager *manager.Manager) {
+func (p *Probe) handleEvent(data []byte) {
 	offset := 0
 	event := p.zeroEvent()
 
@@ -463,7 +470,7 @@ func (p *Probe) handleEvent(CPU int, data []byte, perfMap *manager.PerfMap, mana
 	case ExitEventType:
 		defer p.resolvers.ProcessResolver.DeleteEntry(event.Process.Pid, event.ResolveEventTimestamp())
 	default:
-		log.Errorf("unsupported event type %d on perf map %s", eventType, perfMap.Name)
+		log.Errorf("unsupported event type %d", eventType)
 		return
 	}
 
@@ -703,6 +710,8 @@ func (p *Probe) Snapshot() error {
 
 // Close the probe
 func (p *Probe) Close() error {
+	p.cancelFnc()
+
 	return p.manager.Stop(manager.CleanAll)
 }
 
@@ -743,12 +752,16 @@ func NewProbe(config *config.Config, client *statsd.Client) (*Probe, error) {
 		return nil, err
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	p := &Probe{
 		config:            config,
 		invalidDiscarders: getInvalidDiscarders(),
 		approvers:         make(map[eval.EventType]activeApprovers),
 		managerOptions:    ebpf.NewDefaultOptions(),
 		regexCache:        regexCache,
+		ctx:               ctx,
+		cancelFnc:         cancel,
 	}
 
 	if !p.config.EnableKernelFilters {
@@ -772,6 +785,14 @@ func NewProbe(config *config.Config, client *statsd.Client) (*Probe, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	p.reOrderer = NewReOrderer(p.handleEvent,
+		TimestampFromEventData,
+		resolvers.TimeResolver.ResolveMonotonicTimestamp, ReOrdererOpts{
+			QueueSize:  60000,
+			WindowSize: 50,
+			Delay:      20 * time.Millisecond,
+		})
 
 	eventZero.resolvers = p.resolvers
 
