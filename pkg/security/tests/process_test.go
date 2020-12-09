@@ -9,6 +9,7 @@ package tests
 
 import (
 	"fmt"
+	"github.com/DataDog/datadog-agent/pkg/util/log"
 	"os"
 	"os/exec"
 	"os/user"
@@ -171,9 +172,13 @@ func TestProcessContext(t *testing.T) {
 	})
 
 	t.Run("ancestors", func(t *testing.T) {
-		touch := "/usr/bin/touch"
-		if _, err := os.Stat(executable); err != nil {
-			executable = "/bin/touch"
+		executable := "/usr/bin/touch"
+		if resolved, err := os.Readlink(executable); err == nil {
+			executable = resolved
+		} else {
+			if os.IsNotExist(err) {
+				executable = "/bin/touch"
+			}
 		}
 
 		testFile, _, err := test.Path("test-process-ancestors")
@@ -181,7 +186,7 @@ func TestProcessContext(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		cmd := exec.Command("sh", "-c", touch+" "+testFile)
+		cmd := exec.Command("sh", "-c", executable+" "+testFile)
 		if _, err := cmd.CombinedOutput(); err != nil {
 			t.Error(err)
 		}
@@ -190,8 +195,9 @@ func TestProcessContext(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		} else {
-			if filename, _ := event.GetFieldValue("process.filename"); filename.(string) != touch {
-				t.Errorf("not able to find the proper process filename `%v` vs `%s`: %v", filename, executable, event)
+			log.Debug(event)
+			if filename, _ := event.GetFieldValue("process.filename"); filename.(string) != executable {
+				t.Errorf("expected process filename `%s`, got `%s`: %v", executable, filename, event)
 			}
 
 			if rule.ID != "test_rule_ancestors" {
