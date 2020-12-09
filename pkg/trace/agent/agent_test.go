@@ -430,15 +430,13 @@ func TestClientComputedTopLevel(t *testing.T) {
 			ClientComputedTopLevel: true,
 		}, stats.NewSublayerCalculator())
 		timeout := time.After(time.Second)
-		for {
-			select {
-			case ss := <-agnt.TraceWriter.In:
-				_, ok := ss.Traces[0].Spans[0].Metrics["_top_level"]
-				assert.False(t, ok)
-				return
-			case <-timeout:
-				t.Fatal("timed out waiting for input")
-			}
+		select {
+		case ss := <-agnt.TraceWriter.In:
+			_, ok := ss.Traces[0].Spans[0].Metrics["_top_level"]
+			assert.False(t, ok)
+			return
+		case <-timeout:
+			t.Fatal("timed out waiting for input")
 		}
 	})
 
@@ -449,15 +447,13 @@ func TestClientComputedTopLevel(t *testing.T) {
 			ClientComputedTopLevel: false,
 		}, stats.NewSublayerCalculator())
 		timeout := time.After(time.Second)
-		for {
-			select {
-			case ss := <-agnt.TraceWriter.In:
-				_, ok := ss.Traces[0].Spans[0].Metrics["_top_level"]
-				assert.True(t, ok)
-				return
-			case <-timeout:
-				t.Fatal("timed out waiting for input")
-			}
+		select {
+		case ss := <-agnt.TraceWriter.In:
+			_, ok := ss.Traces[0].Spans[0].Metrics["_top_level"]
+			assert.True(t, ok)
+			return
+		case <-timeout:
+			t.Fatal("timed out waiting for input")
 		}
 	})
 
@@ -469,17 +465,15 @@ func TestClientComputedTopLevel(t *testing.T) {
 			ClientComputedTopLevel: true,
 		}, stats.NewSublayerCalculator())
 		timeout := time.After(time.Second)
-		for {
-			select {
-			case ss := <-agnt.TraceWriter.In:
-				_, ok := ss.Traces[0].Spans[0].Metrics["_top_level"]
-				assert.True(t, ok)
-				_, ok = ss.Traces[0].Spans[0].Metrics["_dd.top_level"]
-				assert.True(t, ok)
-				return
-			case <-timeout:
-				t.Fatal("timed out waiting for input")
-			}
+		select {
+		case ss := <-agnt.TraceWriter.In:
+			_, ok := ss.Traces[0].Spans[0].Metrics["_top_level"]
+			assert.True(t, ok)
+			_, ok = ss.Traces[0].Spans[0].Metrics["_dd.top_level"]
+			assert.True(t, ok)
+			return
+		case <-timeout:
+			t.Fatal("timed out waiting for input")
 		}
 	})
 }
